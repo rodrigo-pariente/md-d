@@ -62,7 +62,7 @@ Requirements:
   - mktemp
   - tail
 - Optional renderer:
-  - bat / batcat
+  - bat
 
 Steps:
 
@@ -98,13 +98,13 @@ SUMMARY_BULLET_POINT="- "
 # Function loaded after input is parsed
 load_defaults() {
   # Set a default renderer
-  # Using batcat as default renderer is highly recommended for pretty printing!
+  # Using bat as default renderer is highly recommended for pretty printing!
   if [[ -z "$renderer" ]]; then
-    renderer="batcat"
+    renderer="bat"
   fi
 
   # Set default options to be chosen with a specific renderer
-  if [[ "$renderer" == batcat && -z "$options" ]]; then
+  if [[ "$renderer" == bat && -z "$options" ]]; then
     options=("--no-pager")
   fi
 }

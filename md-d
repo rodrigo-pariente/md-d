@@ -43,7 +43,7 @@ list_available() {
 
 get_version() {
   if "$level_quiet"; then
-    echo "$VERSION"
+    echo "${0##*/} $VERSION"
   else
     printf "%s\n" "# Version" "" "$VERSION"
   fi
@@ -277,8 +277,8 @@ main() {
     md_files["$md_name"]="$md_file"
   done
 
-  # batcat language correction, necessary because we're using pipes
-  if [[ "$renderer" =~ bat(cat)?$ ]]; then
+  # bat language correction, necessary because we're using pipes
+  if [[ "$renderer" =~ ^bat(cat)?$ ]]; then
     if [[ ! "${options[*]}" =~ .*(-l |--language ).* ]]; then
       options+=("--language md")
     fi
@@ -287,8 +287,8 @@ main() {
   local is_tty
   [[ -t 0 ]] && is_tty=true || is_tty=false
 
-  # batcat sugar print
-  if [[ "$renderer" =~ bat(cat)?$ ]]; then
+  # bat sugar print
+  if [[ "$renderer" =~ ^bat(cat)?$ ]]; then
     if [[ ! "${options[*]}" =~ .*--file-name.* ]]; then
       local artificial_name
       case "$file" in
