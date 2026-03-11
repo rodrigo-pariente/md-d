@@ -317,7 +317,7 @@ main() {
       file="${md_files["${file%.md}"]}"
     else
       case "$file" in
-        _LSDB|_LIST|_HELP)
+        _LSDB|_LIST|_HELP|_VERS)
           file="$(mktemp -p "$tmpdir" XXXX.md)"
           ;;&
         _HELP) get_help >"$file"                          ;;
