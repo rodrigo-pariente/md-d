@@ -1,0 +1,30 @@
+# vi: ft=bash
+
+get_summary() {
+  local md="$1"
+  printf "%s\n" "# Summary" ""
+  local level_count=( 0 0 0 0 0 0 )
+  local last_level=0
+  while IFS= read -r line; do
+    [[ "$line" != \#* ]] && continue
+    local title="${line#*# }"
+
+    local hashes="${line%% *}"
+    local hashes_reduced="${hashes#\#}"
+
+    if (( ${#hashes_reduced} < last_level)); then
+      for ((i="${#hashes}"; i<=5; i++)); do
+        level_count[i]=0
+      done
+    fi
+    (( level_count["${#hashes_reduced}"]++ ))
+    last_level="${#hashes_reduced}"
+
+    local start_chars="${hashes_reduced//#/  }"
+    for ((i=0; i<="${#hashes_reduced}"; i++)); do
+      start_chars+="${level_count[$i]}."
+    done
+
+    printf -- "%b\n" "$start_chars $title\e[0m"
+  done < "$md"
+}

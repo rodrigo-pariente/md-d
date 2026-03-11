@@ -1,0 +1,29 @@
+# vi: ft=bash
+
+MD_TITLE_COLORS=( "\e[0m" "\e[32m" "\e[35m" "\e[30m" "\e[30m" "\e[30m" )
+SUMMARY_SPACING="  "
+SUMMARY_BULLET_POINT="- "
+
+load_defaults() {
+  # default renderer
+  if [[ -z "$renderer" ]]; then
+    renderer="batcat"
+    # renderer="cat"
+  fi
+
+  # default batcat options
+  if [[ "$renderer" == batcat && -z "$options" ]]; then
+    options=("--no-pager")
+  fi
+}
+
+# function overrides, for different behaviours
+load_overrides() {
+  . "$HOME/.config/md-d/numbered_summary"
+}
+
+# markdown databases
+declare -A databases=(
+  [main]="$HOME/.local/share/md-d/"
+)
+

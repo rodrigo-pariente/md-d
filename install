@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+
+main_db="$HOME/.local/share/md-d"
+config_dir="$HOME/.config/md-d"
+shdir="$HOME/.local/bin/"
+
+install() {
+  # Create main database dir
+  [[ ! -d "$main_db" ]] && mkdir -p -- "$main_db"
+
+  # Set global configuration
+  [[ ! -d "$config_dir" ]] && mkdir -p -- "$config_dir"
+  cp ./config/* "$config_dir"
+
+  # Set md-d
+  [[ ! -d "$shdir" ]] && mkdir -p "$shdir"
+  cp "md-d" "$shdir" 
+  chmod +x "$shdir/md-d"
+}
+
+uninstall() {
+  shopt -s nullglob dotglob
+  files=("$main_db"/*)
+  if [[ -d "$main_db" ]]; then
+    if (( "${#files[@]}" == 0 )); then
+      # Delete main database dir, if empty
+      rm -rf -- "$main_db"
+    else
+      echo "You have files on the md-d main database at "$main_db"" >&2
+      echo "Move them before uninstalling." >&2
+    fi
+  fi
+
+  # Delete configuration files
+  if [[ -d "$config_dir" ]]; then
+    rm -rf -- "$config_dir"
+  fi
+
+  # Delete md-d
+  if [[ -f "$shdir/md-d" ]]; then
+    rm -f -- "$shdir/md-d"
+  fi
+}
+
+usage() {
+  cat <<-EOF
+usage: ./"${0##*/}" (-u) (-h) 
+
+none: install md-d
+-h: prints this message
+-u: uninstall md-d
+EOF
+}
+
+while getopts "hu" opt; do
+  case "$opt" in
+    h) usage; exit 0     ;;
+    u) uninstall; exit 0 ;;
+  esac
+done
+
+install
