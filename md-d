@@ -1,0 +1,365 @@
+#!/usr/bin/env bash
+#
+# markdown-database [md-d]
+#   - retrieve personal notes written in Markdown!
+#   - license: MIT
+# rodrigo-pariente
+#   - github: github.com/rodrigo-pariente
+#   - email : rodrigo_pariente@proton.me
+
+MYDIR="$HOME/.config/md-d"
+VERSION="1.0"
+level_debug=false
+level_quiet=false
+
+shopt -s nullglob
+shopt -s extglob
+
+# imports load_config(), databases associative array
+# and appearence related vars
+. "$MYDIR/config"
+
+debug() {
+  "$level_debug" && echo "[DEBUG] $@" >&2
+}
+
+quiet() {
+  if "$level_quiet"; then
+    "$@" 2>/dev/null
+  else
+    "$@"
+  fi
+}
+
+list_databases() {
+  local db_names=("$@")
+  printf "%s\n" "# Configured Databases" "" "${db_names[@]}"
+}
+
+list_available() {
+  local md_names=("$@")
+  printf "%s\n" "# Available Markdowns" "" "${md_names[@]}"
+}
+
+get_version() {
+  if "$level_quiet"; then
+    echo "$VERSION"
+  else
+    printf "%s\n" "# Version" "" "$VERSION"
+  fi
+}
+
+get_help() {
+  cat <<-MD
+# markdown-database [md-d]
+
+Search and retrieve personal Markdown notes from the command-line!
+
+
+# usage: \`${0##*/} [OPTIONS] <query>\`
+
+- Options:
+    - -h: prints this message.
+    - -l: prints list of available markdown files.
+    - -b: prints list of configured databases.
+    - -c: print section of given title.
+      - -i: give level of searching section. \`n\` or \`n,m\`. Default: 1,6.
+      - -m: give number of match to print. Default: 1.
+      - -C: give grep options.
+    - -g: prints glossary out of markdown definitions.
+    - -s: prints summary of help file.
+    - -r: give markdown renderer.
+    - -o: give renderer options.
+    - -d: give markdown database.
+    - -q: quiet fail if search fails.
+    - -G: do not use local configuration.
+    - -D: debug logging.
+    - -v: print version.
+MD
+}
+
+get_summary() {
+  local md="$1"
+  printf "%s\n" "# Summary" ""
+
+  debug "md $md"
+  while IFS= read -r line; do
+    [[ "$line" != \#* ]] && continue
+    local title="${line#*# }"
+
+    local hashes="${line%% *}"
+    local hashes_reduced="${hashes#\#}"
+
+    local start_chars="${hashes_reduced//#/$SUMMARY_SPACING}"
+    start_chars+="$SUMMARY_BULLET_POINT"
+    start_chars+="${MD_TITLE_COLORS[${#hashes_reduced}]}"
+
+    printf -- "%b\n" "$start_chars$title\e[0m"
+  done < "$md"
+}
+
+get_section() {
+  # md          : markdown filename
+  # title       : name of target section
+  # level       : level of the title we are searching for.
+  #               accepts `n` for the specific level n or `n,m`
+  #               to search from n through m
+  # match       : match the `n` occurrence of that section
+  # gopts       : grep options
+  local md="$1"
+  local title="$2"
+  local level="$3"
+  local match="$4"
+  shift 4
+  local gopts=("$@")
+
+  debug "md: $md"
+  debug "title: $title"
+  debug "level: $level"
+  debug "match: $match"
+  debug "gopts: ${gopts[*]}"
+
+  # get the matching occurrence given the parameters
+  local line_number_and_title="$(
+    grep "${gopts[@]}" -n -m"$match" -e"^\#\{$level\} $title$" "$md" |
+    tail -n -1
+  )"
+
+  # no matches
+  if [[ -z "$line_number_and_title" ]]; then
+    echo "ERROR: No section '$title' with given parameters was found." >&2
+    return 1
+  fi
+
+  # extract matched section info
+  local line_number="${line_number_and_title%%:*}"
+  local line="${line_number_and_title#*:}"
+  local hashes="${line%% *}"
+  local level="${#hashes}"
+
+  debug "line_number: $line_number"
+  debug "line: $line"
+  debug "hashes: $hashes"
+  debug "level: $level"
+
+  # get the line number of the section that end ours
+  local max_line_number
+  max_line_number="$(wc -l < "$md")"
+
+  while read -r section_line_number_and_title; do
+    local section_line_number="${section_line_number_and_title%%:*}"
+
+    local is_after_target=$((section_line_number > line_number))
+    local is_before_max_line=$((section_line_number < max_line_number))
+
+    if ((is_after_target && is_before_max_line)); then
+      max_line_number="$section_line_number"
+    fi
+  done < <(grep -n -e"^\#\{1,$level\} " "$md")
+
+  # get amount of lines inside of target section
+  local line_count=$((max_line_number - line_number - 1))
+
+  debug "max_line_number: $max_line_number"
+  debug "line_count: $line_count"
+
+  echo "$(
+    grep "${gopts[@]}" -m"$match" -A"$line_count" -e"^\#\{$level\} $title$"\
+      "$md" |
+    tail -n $((line_count + 1))
+  )"
+}
+
+get_glossary() {
+  local md="$1"
+  local prev_line title
+  local not_first=false
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^([[:blank:]]*)?: && -n "$prev_line" ]]; then
+      "$not_first" && echo || not_first=true
+
+      if [[ "$prev_line" =~ ^[\>*_#] ]]; then
+        title="$prev_line"
+      else
+        title="**$prev_line**"
+      fi
+
+      printf "%s\n" "$title" "$line"
+    fi
+    prev_line=$line
+  done < "$md"
+}
+
+main() {
+  # to-do: *****.*****.*****.*****
+  local file section renderer
+  local database="main"
+  local options=()
+  local gopts=()
+  local summarize=false
+  local glossary=false
+  local local_config=true
+  local dir="$MYDIR"
+  local match="1"
+  local level="1,6"
+
+  local OPTIND OPTARG
+  while getopts "hlbvsgd:r:o:c:i:m:C:qGD" opt; do
+    case "$opt" in
+      h) file="_HELP"         ;;
+      l) file="_LIST"         ;;
+      b) file="_LSDB"         ;;
+      v) file="_VERS"         ;;
+      s) summarize=true       ;;
+      g) glossary=true        ;;
+      d) database="$OPTARG"   ;;
+      r) renderer="$OPTARG"   ;;
+      o) options+=("$OPTARG") ;;
+      c) section="$OPTARG"    ;;
+      i) level="$OPTARG"      ;; # only make sense with -c
+      m) match="$OPTARG"      ;; # only make sense with -c
+      C) gopts+=("$OPTARG")   ;; # only make sense with -c
+      q) level_quiet=true     ;;
+      G) local_config=false   ;;
+      D) level_debug=true     ;;
+    esac
+  done
+
+  shift "$((OPTIND - 1))"
+
+  # validate given searching title level interval
+  if [[ ! "$level" =~ ^[1-6](,[${level:0:1}-6])?$ ]]; then
+    echo "ERROR: Invalid searching title level interval" >&2
+    return 1
+  fi
+
+  # validate given match number
+  if [[ ! "$match" =~ ^([[:digit:]])*$ ]]; then
+    echo "ERROR: Option match should be a positive integer" >&2
+    return 1
+  fi
+
+  # get dir associated with database
+  local dir
+  if [[ -v databases["$database"] ]]; then
+    dir="${databases[$database]}"
+  else
+    dir="$database"
+  fi
+
+  # load config
+  if $local_config && [[ -f "$dir/.config.md-d" ]]; then
+    . "$dir/.config.md-d"
+  fi
+  load_defaults
+  load_overrides
+
+  # set file to be shown
+  if [[ -z "$file" ]]; then
+    file="$1"
+    shift
+  fi
+
+  # bad input
+  unknown_args=("$@")
+  if (( ${#unknown_args[@]} > 0 )); then
+    local IFS=,
+    echo "ERROR: unknown args: (${unknown_args[*]})" >&2
+    return 1
+  fi
+
+  # generate ([md_name]=md_file) array
+  declare -A md_files
+  local md_name
+  for md_file in "$dir"/*.md; do
+    md_name="${md_file##*/}"
+    md_name="${md_name%.md}"
+    md_files["$md_name"]="$md_file"
+  done
+
+  # create pipes for easier content path
+  local pipo="$MYDIR/content"
+
+  # batcat language correction, necessary because we're using pipes
+  if [[ "$renderer" =~ bat(cat)?$ ]]; then
+    if [[ ! "${options[*]}" =~ .*(-l |--language ).* ]]; then
+      options+=("--language md")
+    fi
+  fi
+
+  local is_tty
+  [[ -t 0 ]] && is_tty=true || is_tty=false
+
+  # batcat sugar print
+  if [[ "$renderer" =~ bat(cat)?$ ]]; then
+    if [[ ! "${options[*]}" =~ .*--file-name.* ]]; then
+      local artificial_name
+      case "$file" in
+            *) "$is_tty" || artificial_name='STDIN'         ;;&
+            *) "$is_tty" && artificial_name="$file"         ;;&
+        _HELP) artificial_name="md-d.md"                    ;;&
+        _LIST) artificial_name="available.md"               ;;&
+        _LSDB) artificial_name="databases.md"               ;;&
+        _VERS) artificial_name="version.md"                 ;;&
+            *) "$summarize" && artificial_name="summary.md" ;;
+      esac
+
+      options+=("--file-name $artificial_name")
+    fi
+  fi
+
+  tmpdir="$(mktemp -d --tmpdir md-d.XXXX)"
+  cleanup() { rm -rf -- "$tmpdir" ; }
+  trap cleanup EXIT
+
+  # get file of content
+  if "$is_tty"; then
+    if [[ -v md_files["$file"] ]]; then
+      file="${md_files["$file"]}"
+    elif [[ -v md_files["${file%.md}"] ]]; then
+      file="${md_files["${file%.md}"]}"
+    else
+      case "$file" in
+        _LSDB|_LIST|_HELP)
+          file="$(mktemp -p "$tmpdir" XXXX.md)"
+          ;;&
+        _HELP) get_help >"$file"                          ;;
+        _LIST) list_available "${!md_files[@]}" >"$file"  ;;
+        _LSDB) list_databases "${!databases[@]}" >"$file" ;;
+        _VERS) get_version >"$file"                       ;;
+        *)
+          "$level_quiet" && return 0
+          "$renderer" <(get_help) >&2 && return 1
+          ;;
+      esac
+    fi
+  else
+    file="$(mktemp -p $tmpdir XXXX.md)"
+    cat /dev/stdin >"$file"
+  fi
+
+  # proccess content
+  if [[ -n "$section" ]]; then
+    quiet get_section "$file" "$section" "$level" "$match" "${gopts[@]}"
+  else
+    cat "$file"
+  fi |
+  if "$glossary"; then
+    tmp="$(mktemp -p "$tmpdir" XXXX.md)"; cat >"$tmp"
+    get_glossary "$tmp"
+  else
+    cat
+  fi |
+  if "$summarize"; then
+    tmp="$(mktemp -p "$tmpdir" XXXX.md)"; cat >"$tmp"
+    get_summary "$tmp"
+  else
+    cat
+  fi |
+  "$renderer" ${options[@]}
+}
+
+
+if ! (return 2>/dev/null); then
+  main "$@"
+fi
