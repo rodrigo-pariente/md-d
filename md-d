@@ -277,9 +277,6 @@ main() {
     md_files["$md_name"]="$md_file"
   done
 
-  # create pipes for easier content path
-  local pipo="$MYDIR/content"
-
   # batcat language correction, necessary because we're using pipes
   if [[ "$renderer" =~ bat(cat)?$ ]]; then
     if [[ ! "${options[*]}" =~ .*(-l |--language ).* ]]; then
