@@ -1,7 +1,7 @@
 # Markdown-Database [md-d]
 
 <p align="center">
-  <img src="https://github.com/rodrigo-pariente/md-d/blob/main/images/logo.png" alt="md-d logo" width="250"/>
+  <img src="https://github.com/rodrigo-pariente/md-d/blob/main/images/logo.png" alt="md-d logo"/>
 </p>
 <p align="center"><b>Search and retrieve personal Markdown notes from the command-line!</b></p>
 
